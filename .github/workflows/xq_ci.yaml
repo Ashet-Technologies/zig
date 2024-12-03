@@ -1,0 +1,61 @@
+name: "Build Zig"
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  build-x86_64:
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: mlugg/setup-zig@v1
+      with:
+        version: 0.13.0
+
+    - name: Install Dependencies
+      uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        version: 1.2
+        # INCREMENT 'version' ON PACKAGE CHANGES!
+        packages: llvm-18-dev libclang-18-dev liblld-18-dev liblzma-dev libxml2-dev libzstd-dev zlib1g-dev pkg-config
+        execute_install_scripts: true
+    
+    - name: Debug
+      run: |
+        echo /lib
+        ls /lib | grep -Ee '\.(so|a)$'
+        echo /usr/lib
+        ls /usr/lib | grep -Ee '\.(so|a)$'
+        echo /usr/lib/x86_64-linux-gnu
+        ls /usr/lib/x86_64-linux-gnu | grep -Ee '\.(so|a)$'
+        ls "$(llvm-config-18 --prefix)"
+
+    - name: Build Zig
+      run: |
+        zig build                                      \
+          --prefix zig-out                             \
+          --search-prefix "$(llvm-config-18 --prefix)" \
+          --zig-lib-dir "$(realpath lib)"              \
+          -Dzlib_a=/usr/lib/x86_64-linux-gnu/libz.a    \
+          -Dzstd_a=/usr/lib/x86_64-linux-gnu/libzstd.a \
+          -Dcpu=baseline                               \
+          -Doptimize=ReleaseFast                       \
+          -Dno-langref                                 \
+          -Denable-llvm                                \
+          -Dversion-string=0.13.1-ashet                \
+          -Dllvm-has-m68k=false                        \
+          -Dllvm-has-xtensa=false                      \
+          -Dllvm-has-arc=false                         \
+          -Dllvm-has-csky=false
+    - run: ls
+    - run: ls zig-out
+
+    - name: Upload Results
+      uses: actions/upload-artifact@v4
+      with:
+        name: zig-0.13.0-ashet-x86_64
+        path: ./zig-out/
+
+# llvm-18-dev libclang-18-dev liblld-18-dev liblzma-dev libxml2-dev

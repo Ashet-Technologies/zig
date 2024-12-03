@@ -9,7 +9,7 @@ const fs = std.fs;
 const InstallDirectoryOptions = std.Build.InstallDirectoryOptions;
 const assert = std.debug.assert;
 
-const zig_version: std.SemanticVersion = .{ .major = 0, .minor = 13, .patch = 0 };
+const zig_version: std.SemanticVersion = .{ .major = 0, .minor = 13, .patch = 1, .pre="ashet"};
 const stack_size = 32 * 1024 * 1024;
 
 pub fn build(b: *std.Build) !void {
@@ -90,6 +90,9 @@ pub fn build(b: *std.Build) !void {
     const skip_run_translated_c = b.option(bool, "skip-run-translated-c", "Main test suite skips run-translated-c tests") orelse false;
 
     const only_install_lib_files = b.option(bool, "lib-files-only", "Only install library files") orelse false;
+
+const libz_path = b.option([]const u8, "zlib_a", "Path to libz.a") ;
+const zstd_path = b.option([]const u8, "zstd_a", "Path to zstd.a") ;
 
     const static_llvm = b.option(bool, "static-llvm", "Disable integration with system-installed LLVM, Clang, LLD, and libc++") orelse false;
     const enable_llvm = b.option(bool, "enable-llvm", "Build self-hosted compiler with LLVM backend enabled") orelse static_llvm;
@@ -329,8 +332,8 @@ pub fn build(b: *std.Build) !void {
             try addCmakeCfgOptionsToExe(b, cfg, check_case_exe, use_zig_libcxx);
         } else {
             // Here we are -Denable-llvm but no cmake integration.
-            try addStaticLlvmOptionsToExe(exe);
-            try addStaticLlvmOptionsToExe(check_case_exe);
+            try addStaticLlvmOptionsToExe(exe, libz_path, zstd_path);
+            try addStaticLlvmOptionsToExe(check_case_exe, libz_path, zstd_path);
         }
         if (target.result.os.tag == .windows) {
             inline for (.{ exe, check_case_exe }) |artifact| {
@@ -750,7 +753,7 @@ fn addCmakeCfgOptionsToExe(
     }
 }
 
-fn addStaticLlvmOptionsToExe(exe: *std.Build.Step.Compile) !void {
+fn addStaticLlvmOptionsToExe(exe: *std.Build.Step.Compile, maybe_libz_path: ?[]const u8, maybe_zstd_path: ?[]const u8) !void {
     // Adds the Zig C++ sources which both stage1 and stage2 need.
     //
     // We need this because otherwise zig_clang_cc1_main.cpp ends up pulling
@@ -774,8 +777,20 @@ fn addStaticLlvmOptionsToExe(exe: *std.Build.Step.Compile) !void {
         exe.linkSystemLibrary(lib_name);
     }
 
-    exe.linkSystemLibrary("z");
-    exe.linkSystemLibrary("zstd");
+    if(maybe_libz_path) |libz_path| {
+        exe.addObjectFile(.{ .cwd_relative = libz_path });
+    }
+    else {
+        exe.linkSystemLibrary("z");
+    }
+
+    if(maybe_zstd_path) |zstd_path| {
+        exe.addObjectFile(.{ .cwd_relative = zstd_path });
+    }
+    else {
+        exe.linkSystemLibrary("zstd");
+    }
+
 
     if (exe.rootModuleTarget().os.tag != .windows or exe.rootModuleTarget().abi != .msvc) {
         // This means we rely on clang-or-zig-built LLVM, Clang, LLD libraries.

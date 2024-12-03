@@ -22,30 +22,62 @@
       system: let
         pkgs = import nixpkgs {inherit system;};
       in {
-        devShells.default = pkgs.mkShell {
-          nativeBuildInputs = with pkgs;
-            [
-              cmake
-              gdb
-              libxml2
-              ninja
-              qemu
-              wasmtime
-              zlib
-              xz
-            ]
-            ++ (with llvmPackages_18; [
-              clang
-              clang-unwrapped
-              lld
-              llvm
-            ]);
+        packages.default = pkgs.stdenv.mkDerivation {
+          name = "zig-ashet";
+
+          version = "0.13.1-ashet";
+
+          buildInputs = [
+              pkgs.zig
+              pkgs.pkgsStatic.libxml2
+              pkgs.pkgsStatic.zlib
+              pkgs.pkgsStatic.xz
+              pkgs.pkgsStatic.llvmPackages_18.clang
+              pkgs.pkgsStatic.llvmPackages_18.clang-unwrapped
+              pkgs.pkgsStatic.llvmPackages_18.lld
+              pkgs.pkgsStatic.llvmPackages_18.libllvm
+            ];
+          
+          env = { 
+              ZIG_GLOBAL_CACHE_DIR = "$TMPDIR/zig-cache";
+          };
+
+          src = builtins.filterSource
+            (path: type: !(type == "directory" && ((baseNameOf path == ".zig-cache") || (baseNameOf path == "build"))))
+            ./.;
+
+          configurePhase = "";
+
+          buildPhase = ''
+            zig build                                   \
+              --prefix $out                             \
+              --search-prefix "$(llvm-config --libdir)/.." \
+              --zig-lib-dir "$(realpath lib)"           \
+              -Dtarget=x86_64-linux-musl                \
+              -Dstatic-llvm                             \
+              -Doptimize=ReleaseFast                    \
+              -Dno-langref                              \
+              -Denable-llvm                             \
+              -Dversion-string=0.13.1-ashet
+          '';          
+          
+          installPhase = "";
 
           hardeningDisable = ["all"];
         };
+        # packages.default = ((pkgs.pkgsStatic.zig.override {
+        #   llvmPackages = pkgs.pkgsStatic.llvmPackages_18;
+        # }).overrideAttrs (old: {
+        #     buildInputs = old.buildInputs ++ [pkgs.pkgsStatic.libtinfo];
+        #     version = "0.13.1-ashetos";
+        #     src = ./.;
 
-        # For compatibility with older versions of the `nix` binary
-        devShell = self.devShells.${system}.default;
+        #     postPatch = ""; # disable nix patching
+        #     postBuild = ""; # disable langref
+        #     postInstall = ""; # disable langref
+        #     fixupPhase = ""; 
+        #     outputs = ["out"]; # remove langref
+        # }));
       }
     );
 }
